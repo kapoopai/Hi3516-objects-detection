@@ -1,0 +1,444 @@
+# Makefile.param 
+# Only global variable should be defined here.
+# All the variables must be used as "export" and "?=".
+# Otherwise, there will be some errors, when Makefile.param is nested.
+
+export PWD = $(shell pwd)
+
+# Define the default OS link directory.
+export HIWORK_PATH?=/home/davanqi/Hi3516A/Hi3516A_SDK_V1.0.6.0
+
+export ARCH=arm
+export MPP_BUILD=n
+
+# use ini cfg file for sensor
+export USEINI?=n
+
+#Change ISP parameter config mode 
+#Default "y" is ini config mode, else "n" source code config mode
+export ISP_INI_CONFIG=n
+#export ISP_INI_CONFIG=y
+# use HIARCH indicate chip, use libc to choose cross compiler.
+export HIARCH?=hi3516a
+export LIBC?=glibc
+
+# Whether support the debug information. HI_DEBUG or HI_RELEASE
+export HIDBG?=HI_DEBUG
+
+# Whether open -g 
+#export HIGDB?=y
+export HIGDB?=n
+
+# FPGA board or not
+export FPGA?=n
+
+# Hisi VQE open
+export HIVQE?=n
+
+ifeq ($(HIARCH), )
+$(error HIARCH not defined! Please check!)
+endif
+
+ifeq ($(LIBC), )
+$(error LIBC not defined! Please check!)
+endif
+
+ifeq ($(HIARCH),hi3516a)
+	export HICHIP?=0x3516A100
+	export ARCH_DIR?=hi3516a
+endif
+
+ifeq ($(HIARCH),hi3516d)
+	export HICHIP?=0x3516D100
+	export ARCH_DIR?=hi3516d
+endif
+
+ifeq ($(HIARCH),hi3518e)
+	export HICHIP?=0x3518E200
+	export ARCH_DIR?=hi3518e
+endif
+
+ifeq ($(HIDBG),HI_DEBUG)
+	DBG_FLAG=1
+else
+	DBG_FLAG=0
+endif
+
+
+ifeq ($(HIARCH),hi3536)
+	export PRODUCT?=NVRDVR
+else
+	export PRODUCT?=IPC
+endif
+
+# use C01 to indicate uclibc, C02 to  indicate glibc, C00 to indicate FPGA.
+ifeq ($(LIBC),glibc)
+	export CVER?=.C$(DBG_FLAG)2
+else ifeq ($(FPGA), y)
+	export CVER?=.C$(DBG_FLAG)0
+else
+	export CVER?=.C$(DBG_FLAG)1
+endif
+
+ifeq ($(FPGA),y)
+	export HI_FPGA:=HI_FPGA
+	export EXTDRV:=extdrv/$(HIARCH)_fpga
+else
+	export HI_FPGA:=HI_XXXX
+	export EXTDRV:=extdrv/$(HIARCH)
+endif
+
+# Get the local SDK_ROOT path or RELEASE_ROOT path by PARAM_FILE.
+# PARAM_FILE is configed at Makefile before include this file
+export PARAM_FILE
+#export SDK_PATH?=$($(shell cd $(shell pwd)/`dirname $(PARAM_FILE)`/..; pwd)
+export SDK_PATH?=$(HIWORK_PATH)
+#export MPP_PATH?=$(shell cd $(shell pwd)/`dirname $(PARAM_FILE)`; pwd)
+#export SHELF_ROOT?=$(MPP_PATH)/code/shelf
+export DRV_ROOT?=$(SDK_PATH)/drv
+
+# Allocated the linux position
+#ifneq ($(shell ls $(HIWORK_PATH)/osdrv$(HIARCH)$(CVER)), )
+	#export LINUX_ROOT?=$(HIWORK_PATH)/osdrv$(HIARCH)$(CVER)/opensource/kernel/linux-3.4.y
+#else
+	#export LINUX_ROOT?=$(SDK_PATH)/osdrv/opensource/kernel/linux-3.4.y
+#endif
+
+# add by peibibo
+export LINUX_ROOT?=/home/davanqi/Hi3516A/Hi3516A_SDK_V1.0.6.0/osdrv/opensource/kernel/linux-3.4.y/
+# add end
+
+# Define cross compiler
+ifeq ($(LIBC),glibc)
+	export CROSS_COMPILE?= arm-hisiv400-linux-
+	export CROSS?= arm-hisiv400-linux-
+else
+	export CROSS_COMPILE?=arm-hisiv300-linux-
+	export CROSS?=arm-hisiv300-linux-
+endif
+
+export CC:=$(CROSS)gcc
+export AR:=$(CROSS)ar
+
+export MPP_CFLAGS:= -Wall
+export DRV_CFLAGS:=
+
+ifeq ($(HIGDB), y)
+	MPP_CFLAGS += -g
+endif
+
+# Define the object output directory
+ifeq ($(MPP_BUILD), y)
+	REL_DIR=$(SDK_PATH)/mpp/release/$(HIARCH)
+	SAMPLE_DIR=$(SDK_PATH)/mpp/sample/$(HIARCH)
+else
+	REL_DIR=$(SDK_PATH)/mpp
+	EXTDRV=extdrv
+	SAMPLE_DIR=$(SDK_PATH)/mpp/sample
+endif
+
+#export REL_INC := $(REL_DIR)/include
+#export REL_LIB := $(REL_DIR)/lib
+#export REL_KO  := $(REL_DIR)/ko
+
+export REL_LIB := $(PWD)/libs/hilib
+
+# Define the param of audio 
+export AUDIO_PATH?=$(SDK_PATH)/mpp/component/audio/lib/$(CROSS)
+
+# include the audio config file of platform
+
+export AUDIO_LIBA ?= $(REL_LIB)/libVoiceEngine.a\
+	             $(REL_LIB)/libupvqe.a\
+				 $(REL_LIB)/libdnvqe.a\
+				 $(REL_LIB)/libilbc.a
+
+export AUDIO_LIBS ?= $(REL_LIB)/libVoiceEngine.so\
+	             $(REL_LIB)/libupvqe.so\
+				 $(REL_LIB)/libdnvqe.so
+
+# include the audio config file of platform
+
+# Define the lib of jpeg codec
+export JPEGD_PATH?=$(SDK_PATH)/mpp/component/jpegd
+#export JPEGD_LIBA:=$(REL_LIB)/libjpeg.a
+
+export HIMEM_LIBA := $(REL_LIB)/libmem.a
+
+###############################################################################
+# LIB GLOBAL CFLAGS
+ifeq ($(HIARCH),hi3516a)
+	export LIBS_CFLAGS    = -mcpu=cortex-a7 -mfloat-abi=softfp -mfpu=neon-vfpv4 -ffunction-sections
+	LIBS_CFLAGS += -mno-unaligned-access -fno-aggressive-loop-optimizations -ldl
+
+	export LIBS_LD_CFLAGS = -mcpu=cortex-a7 -mfloat-abi=softfp -mfpu=neon-vfpv4
+	LIBS_LD_CFLAGS += -mno-unaligned-access -fno-aggressive-loop-optimizations -ldl
+endif
+
+ifeq ($(HIARCH),hi3516d)
+	export LIBS_CFLAGS    = -mcpu=cortex-a7 -mfloat-abi=softfp -mfpu=neon-vfpv4
+	export LIBS_LD_CFLAGS = -mcpu=cortex-a7 -mfloat-abi=softfp -mfpu=neon-vfpv4
+endif
+
+#export ITIS_INC := $(SDK_PATH)/mpp/include_itis
+#export ITIS_LIB := $(SDK_PATH)/mpp/lib_itis
+
+# use ini cfg file for sensor
+export USEINI?=n
+
+###############################################################################
+
+#********************* Macro for version management***************************** 
+VER_X ?= 1
+VER_Y ?= 0
+VER_Z ?= 0
+VER_P ?= 0
+VER_B ?= 10
+MPP_CFLAGS += -DVER_X=$(VER_X) -DVER_Y=$(VER_Y) -DVER_Z=$(VER_Z) -DVER_P=$(VER_P) -DVER_B=$(VER_B)
+#******************************************************************************* 
+
+# include the config file of platform
+-include $(SDK_PATH)/mpp/configs/config.mk
+
+ifeq ($(CONFIG_JPEGEDCF), y)
+	MPP_CFLAGS += -D ENABLE_JPEGEDCF 
+endif	
+
+ifeq ($(CONFIG_LOWDELAY), y)
+	MPP_CFLAGS += -DENABLE_LOWDELAY
+endif
+
+
+
+ifeq ($(WDR),)
+WDR :=n
+endif
+
+
+################# select sensor type for your sample ####################
+#SENSOR_TYPE ?= SONY_IMX122_DC_1080P_30FPS
+#SENSOR_TYPE ?= APTINA_MT9P006_DC_1080P_30FPS
+
+#------demo board use sublvds default----------------
+#SENSOR_TYPE ?= PANASONIC_MN34220_SUBLVDS_1080P_30FPS
+#SENSOR_TYPE ?= PANASONIC_MN34220_SUBLVDS_720P_120FPS
+
+#SENSOR_TYPE ?= PANASONIC_MN34220_MIPI_1080P_30FPS
+#SENSOR_TYPE ?= PANASONIC_MN34220_MIPI_1080P_60FPS
+#SENSOR_TYPE ?= PANASONIC_MN34220_MIPI_720P_120FPS
+
+SENSOR_TYPE ?= SONY_IMX291_MIPI_1080P_25FPS
+
+#SENSOR_TYPE ?= SONY_IMX178_LVDS_5M_30FPS
+#SENSOR_TYPE ?= SONY_IMX178_LVDS_1080P_30FPS
+
+#SENSOR_TYPE ?= SONY_IMX117_LVDS_1080P_30FPS
+#SENSOR_TYPE ?= SONY_IMX117_LVDS_720P_30FPS
+
+#SENSOR_TYPE ?= SONY_IMX123_LVDS_QXGA_30FPS
+
+#SENSOR_TYPE ?= SONY_IMX185_MIPI_1080P_30FPS
+
+#SENSOR_TYPE ?= APTINA_AR0230_HISPI_1080P_30FPS
+
+#SENSOR_TYPE ?= APTINA_AR0330_MIPI_1080P_30FPS
+#SENSOR_TYPE ?= APTINA_AR0330_MIPI_1536P_25FPS
+#SENSOR_TYPE ?= APTINA_AR0330_MIPI_1296P_25FPS
+#SENSOR_TYPE ?= OMNIVISION_OV4689_MIPI_1080P_30FPS
+#SENSOR_TYPE ?= OMNIVISION_OV4689_MIPI_4M_30FPS
+#SENSOR_TYPE ?= OMNIVISION_OV4689_MIPI_2048X1520_30FPS
+#SENSOR_TYPE ?= OMNIVISION_OV4689_MIPI_2304X1296_30FPS
+#SENSOR_TYPE ?= OMNIVISION_OV5658_MIPI_5M_30FPS
+
+SENSOR_LIBS := $(REL_LIB)/libisp.a
+
+ifeq ($(SENSOR_TYPE), APTINA_MT9P006_DC_1080P_30FPS)
+    SENSOR_LIBS += $(REL_LIB)/libsns_mt9p006.a
+endif
+
+ifeq ($(SENSOR_TYPE), PANASONIC_MN34220_SUBLVDS_1080P_30FPS)
+	SENSOR_LIBS += $(REL_LIB)/libsns_mn34220.a
+endif
+
+ifeq ($(SENSOR_TYPE), PANASONIC_MN34220_SUBLVDS_720P_120FPS)
+	SENSOR_LIBS += $(REL_LIB)/libsns_mn34220.a
+endif
+
+ifeq ($(SENSOR_TYPE), PANASONIC_MN34220_MIPI_1080P_30FPS)
+	SENSOR_LIBS += $(REL_LIB)/libsns_mn34220_mipi.a
+endif
+
+#ifeq ($(SENSOR_TYPE), SONY_IMX291_MIPI_1080P_25FPS)
+	#SENSOR_LIBS += $(REL_LIB)/libsns_imx291_mipi.a
+#endif
+
+ifeq ($(SENSOR_TYPE), PANASONIC_MN34220_MIPI_1080P_60FPS)
+        SENSOR_LIBS += $(REL_LIB)/libsns_mn34220_mipi.a
+endif
+
+ifeq ($(SENSOR_TYPE), PANASONIC_MN34220_MIPI_720P_120FPS)
+	SENSOR_LIBS += $(REL_LIB)/libsns_mn34220_mipi.a
+endif
+
+ifeq ($(SENSOR_TYPE), APTINA_9M034_DC_960P_30FPS)
+       SENSOR_LIBS += $(REL_LIB)/libsns_9m034_960p.a
+endif
+
+ifeq ($(SENSOR_TYPE), SONY_IMX178_LVDS_1080P_30FPS)
+      SENSOR_LIBS += $(REL_LIB)/libsns_imx178.a
+endif
+
+ifeq ($(SENSOR_TYPE), SONY_IMX178_LVDS_5M_30FPS)
+      SENSOR_LIBS += $(REL_LIB)/libsns_imx178.a
+endif
+
+ifeq ($(SENSOR_TYPE), SONY_IMX117_LVDS_1080P_30FPS)
+      SENSOR_LIBS += $(REL_LIB)/libsns_imx117.a
+endif
+
+ifeq ($(SENSOR_TYPE), SONY_IMX117_LVDS_720P_30FPS)
+      SENSOR_LIBS += $(REL_LIB)/libsns_imx117.a
+endif
+
+ifeq ($(SENSOR_TYPE), SONY_IMX123_LVDS_QXGA_30FPS)
+      SENSOR_LIBS += $(REL_LIB)/libsns_imx123.a
+endif
+
+ifeq ($(SENSOR_TYPE), SONY_IMX185_MIPI_1080P_30FPS)
+      SENSOR_LIBS += $(REL_LIB)/libsns_imx185.a
+endif
+
+ifeq ($(SENSOR_TYPE), APTINA_AR0230_HISPI_1080P_30FPS)
+      SENSOR_LIBS += $(REL_LIB)/libsns_ar0230.a
+endif
+
+ifeq ($(SENSOR_TYPE), APTINA_AR0330_MIPI_1080P_30FPS)
+      SENSOR_LIBS += $(REL_LIB)/libsns_ar0330.a
+endif
+
+ifeq ($(SENSOR_TYPE), APTINA_AR0330_MIPI_1536P_25FPS)
+      SENSOR_LIBS += $(REL_LIB)/libsns_ar0330.a
+endif
+
+ifeq ($(SENSOR_TYPE), APTINA_AR0330_MIPI_1296P_25FPS)
+      SENSOR_LIBS += $(REL_LIB)/libsns_ar0330.a
+endif
+
+ifeq ($(SENSOR_TYPE), OMNIVISION_OV4689_MIPI_1080P_30FPS)
+ifeq ($(USEFHZZ2A), y)
+    SENSOR_LIBS += $(REL_LIB)/libsns_ov4689_fhzz.a
+else
+    SENSOR_LIBS += $(REL_LIB)/libsns_ov4689.a
+endif
+endif
+
+ifeq ($(SENSOR_TYPE), OMNIVISION_OV4689_MIPI_4M_30FPS)
+ifeq ($(USEFHZZ2A), y)
+    SENSOR_LIBS += $(REL_LIB)/libsns_ov4689_fhzz.a
+else
+    SENSOR_LIBS += $(REL_LIB)/libsns_ov4689.a
+endif
+endif
+
+ifeq ($(SENSOR_TYPE), OMNIVISION_OV4689_MIPI_2048X1520_30FPS)
+ifeq ($(USEFHZZ2A), y)
+    SENSOR_LIBS += $(REL_LIB)/libsns_ov4689_fhzz.a
+else
+    SENSOR_LIBS += $(REL_LIB)/libsns_ov4689.a
+endif
+endif
+
+ifeq ($(SENSOR_TYPE), OMNIVISION_OV4689_MIPI_2304X1296_30FPS)
+ifeq ($(USEFHZZ2A), y)
+    SENSOR_LIBS += $(REL_LIB)/libsns_ov4689_fhzz.a
+else
+	SENSOR_LIBS += $(REL_LIB)/libsns_ov4689.a
+endif
+endif
+
+ifeq ($(SENSOR_TYPE), OMNIVISION_OV5658_MIPI_5M_30FPS)
+      SENSOR_LIBS += $(REL_LIB)/libsns_ov5658.a
+endif
+
+#iniparser
+ifeq ($(USEINI), y)
+SENSOR_LIBS += $(REL_LIB)/lib_cmoscfg.a
+SENSOR_LIBS += $(REL_LIB)/lib_iniparser.a
+endif
+
+#########################################################################
+
+COMMON_DIR:=$(PWD)/../common
+
+#INC_FLAGS := -I$(COMMON_DIR)
+#INC_FLAGS += -I$(REL_INC)
+#INC_FLAGS += -I$(SDK_PATH)/mpp/component/acodec
+
+#ifeq ($(MPP_BUILD), y)
+	#INC_FLAGS += -I$(SDK_PATH)/mpp/$(EXTDRV)/tw2865
+	#INC_FLAGS += -I$(SDK_PATH)/mpp/$(EXTDRV)/tlv320aic31
+	#INC_FLAGS += -I$(SDK_PATH)/mpp/$(EXTDRV)/ak7756en
+#else
+	#INC_FLAGS += -I$(SDK_PATH)/mpp/extdrv/tw2865
+	#INC_FLAGS += -I$(SDK_PATH)/mpp/$(EXTDRV)/tlv320aic31
+	#INC_FLAGS += -I$(SDK_PATH)/mpp/$(EXTDRV)/ak7756en
+#endif
+
+ISP_VERSION := ISP_V2
+
+SENSOR_LIBS += $(REL_LIB)/lib_hiawb.a
+SENSOR_LIBS += $(REL_LIB)/lib_hiae.a
+SENSOR_LIBS += $(REL_LIB)/lib_hiaf.a
+
+SENSOR_LIBS += $(REL_LIB)/lib_hidefog.a
+CFLAGS := -Wall
+
+ifeq ($(HIGDB), y)
+	CFLAGS += -g
+endif
+
+CFLAGS += $(INC_FLAGS) -D$(HIARCH) -DHICHIP=$(HICHIP) -DSENSOR_TYPE=$(SENSOR_TYPE) -D$(HIDBG) -D$(HI_FPGA) -lpthread -lm -ldl -D$(ISP_VERSION)
+
+ifeq ($(HIVQE), y)
+	CFLAGS += -DAI_VQEOPEN
+endif
+
+ifeq ($(SENSOR_TYPE), PANASONIC_MN34220_SUBLVDS_1080P_30FPS)
+	CFLAGS += -DHI_MIPI_ENABLE
+endif  
+
+ifeq ($(SENSOR_TYPE), SONY_IMX178_LVDS_1080P_30FPS)
+	CFLAGS += -DHI_MIPI_ENABLE
+endif
+
+ifeq ($(SENSOR_TYPE), SONY_IMX178_LVDS_5M_30FPS)
+	CFLAGS += -DHI_MIPI_ENABLE
+endif
+
+ifeq ($(SENSOR_TYPE), SONY_IMX185_MIPI_1080P_30FPS)
+	CFLAGS += -DHI_MIPI_ENABLE
+endif
+
+
+################ select audio codec type for your sample ################
+ACODEC_TYPE ?= ACODEC_TYPE_INNER
+#external acodec
+#ACODEC_TYPE ?= ACODEC_TYPE_AK7756
+#ACODEC_TYPE ?= ACODEC_TYPE_TLV320AIC31
+
+ifeq ($(ACODEC_TYPE), ACODEC_TYPE_INNER)
+	CFLAGS += -DHI_ACODEC_TYPE_INNER
+endif
+
+ifeq ($(ACODEC_TYPE), ACODEC_TYPE_AK7756)
+	CFLAGS += -DHI_ACODEC_TYPE_AK7756
+endif
+
+ifeq ($(ACODEC_TYPE), ACODEC_TYPE_TLV320AIC31)
+	CFLAGS += -DHI_ACODEC_TYPE_TLV320AIC31
+endif
+#########################################################################
+
+CFLAGS += $(LIBS_CFLAGS)
+
+# End!!
