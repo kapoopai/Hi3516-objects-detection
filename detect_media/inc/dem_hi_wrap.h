@@ -68,11 +68,22 @@ int HI_wrap_osd_fixtype(void);
 /*******************************************************************************
  * name    : HI_wrap_label_box_show
  * function: attach labels and boxes on venc.
- * input   : label_names: labels name
+ * input   : number:      osd boxes number
+ *           label_bmp:   labels bmp
+ *           bmp_res:     bmp resolution
  *           boxes:       boxes coordinates, such as X1, Y1, X2, Y2
  * output  : 
  * return  : DEM_SUCCESS or errno number
  *******************************************************************************/
-int HI_wrap_label_box_show(int number, char **label_names, float *boxes);
+int HI_wrap_label_box_show(int number, char **label_bmp, DEM_RES_ST *bmp_res, float *boxes);
+
+/*******************************************************************************
+ * name    : HI_wrap_draw_cover_labels_fix
+ * function: draw the class labels for test.
+ * input   : 
+ * output  : 
+ * return  : DEM_SUCCESS or errno number
+ *******************************************************************************/
+int HI_wrap_draw_cover_labels_fix(char *bmp_addr);
 
 #endif  /* __DEM_HI_WRAP_H__ */

@@ -77,6 +77,7 @@ int DEM_cfg_module_init(void)
     strcpy(g_config.alg[0].alg_name, ALG_OBJDET_NAME);
 
     g_config.osd.attach_vpss_id = 3;
+    g_config.osd.attach_venc_id = 0;
 
     // check vi is valid
     if (DEM_SUCCESS != cfg_vi_ch_valid())

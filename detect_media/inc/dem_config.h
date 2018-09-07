@@ -34,6 +34,7 @@ typedef struct ALG_PRAMA_ST
 typedef struct OSD_PRAMA_ST
 {
     int attach_vpss_id;         // vpss id for attach RGN
+    int attach_venc_id;         // venc id for attach RGN
 }DEM_OSD_PRAMA_ST;
 
 typedef struct CONFIG_ST

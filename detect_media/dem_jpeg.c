@@ -67,7 +67,7 @@ void *jpeg_capture_task_func(void *arg)
     sprintf(thread_name, "jpeg_capture_ch%d", enc_ch);
     prctl(PR_SET_NAME, (unsigned long)thread_name, 0, 0, 0);
 
-    printf("[%s: %d]tread %s start process!\n", __func__, __LINE__, thread_name);
+    printf("[%s: %d]thread %s start process!\n", __func__, __LINE__, thread_name);
     while (DEM_TRUE)
     {
         // printf("[%s: %d]start to get picture!\n", __func__, __LINE__);

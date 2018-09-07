@@ -29,6 +29,8 @@ History       :
 #include "mpi_sys.h"
 #include "mpi_region.h"
 
+#define MIN_BMP_RGN_HANDLEID            (40)
+
 typedef struct RGN_PRAMA_HANDLE
 {
     int max_handle;             // max rgn handle id is used
@@ -142,7 +144,131 @@ int HI_draw_cover_boxes(int tuple_num, int *cords)
     }
 
     return DEM_SUCCESS;
+}
 
+
+/*******************************************************************************
+ * name    : HI_draw_cover_labels
+ * function: draw the class labels.
+ * input   : bmp_addr:  bmp address
+ *           tuple_num: coordinates tuple number
+ *           res:       width and height pixel number
+ *           cords:     boxes coordinates, such as X1, Y1, X2, Y2
+ * output  : 
+ * return  : DEM_SUCCESS or errno number
+ *******************************************************************************/
+int HI_draw_cover_labels(char **bmp_addr, int tuple_num, DEM_RES_ST *res, int *cords)
+{
+    DEM_CONFIG_ST *cfg = DEM_cfg_get_global_params();
+    if (NULL == cfg)
+    {
+        printf("[%s: %d]DEM_cfg_get_global_params fail!\n", __func__, __LINE__);
+        return DEM_COMMONFAIL;
+    }
+
+    if (NULL == bmp_addr || NULL == res)
+    {
+        printf("[%s: %d]param bmp_addr or res fail!\n", __func__, __LINE__);
+        return DEM_COMMONFAIL;   
+    }
+#if 0
+    if (0 > res->width || 0 > res->height)
+    {        
+        printf("[%s: %d]resolution is overlimit, width: %d, height: %d!\n",
+                 __func__, __LINE__, res->width, res->height);
+        return DEM_COMMONFAIL; 
+    }
+#endif 
+    int i = 0;
+    int hi_ret = DEM_COMMONFAIL;
+    MPP_CHN_S mpp_chn;
+    RGN_ATTR_S rgn_attr;
+    RGN_CHN_ATTR_S rgn_chn_attr;
+
+    /* Add cover to vpss group */
+    mpp_chn.enModId  = HI_ID_VENC;
+    mpp_chn.s32DevId = 0;
+    mpp_chn.s32ChnId = cfg->osd.attach_venc_id;
+
+    /* Create cover and attach to vpss group */
+    int *coords = cords;
+    for (i = MIN_BMP_RGN_HANDLEID; i < tuple_num + MIN_BMP_RGN_HANDLEID; i++)
+    {
+        int label_idx = i - MIN_BMP_RGN_HANDLEID;
+        // read the address of coordinates
+        coords = cords + 4 * label_idx;
+        int x1 = *coords;
+        int y1 = *(coords + 1);
+        // int x2 = *(coords + 2);
+        // int y2 = *(coords + 3);
+        int bmp_width  = (res + label_idx)->width;
+        int bmp_height = (res + label_idx)->height;
+
+        // set the rgn attributes
+        rgn_attr.enType = OVERLAY_RGN;
+        rgn_attr.unAttr.stOverlay.enPixelFmt       = PIXEL_FORMAT_RGB_1555;
+        rgn_attr.unAttr.stOverlay.stSize.u32Width  = bmp_width;
+        rgn_attr.unAttr.stOverlay.stSize.u32Height = bmp_height;
+        rgn_attr.unAttr.stOverlay.u32BgColor       = 0x7FFF;        
+
+        // we cann't create a same handle twice
+        if (s_rgn_params.max_handle <= label_idx)
+        {
+            hi_ret = HI_MPI_RGN_Create(i, &rgn_attr);
+            if (HI_SUCCESS != hi_ret)
+            {
+                printf("[%s: %d]HI_MPI_RGN_Create fail! width: %d, height: %d, s32Ret: 0x%x.\n",
+                     __func__, __LINE__, hi_ret,
+                     rgn_attr.unAttr.stOverlay.stSize.u32Width, rgn_attr.unAttr.stOverlay.stSize.u32Height);
+                continue;
+            }
+        }
+        else   // detach channel first
+        {
+            hi_ret = HI_MPI_RGN_DetachFromChn(i, &mpp_chn);
+            if (HI_SUCCESS != hi_ret)
+            {
+                printf("[%s: %d]HI_MPI_RGN_DetachFromChn %d fail! s32Ret: 0x%x.\n", __func__, __LINE__, i, hi_ret);
+                continue;
+            }
+        }
+
+        rgn_chn_attr.bShow  = HI_TRUE;
+        rgn_chn_attr.enType = OVERLAY_RGN;
+
+        rgn_chn_attr.unChnAttr.stOverlayChn.stPoint.s32X = x1;
+        rgn_chn_attr.unChnAttr.stOverlayChn.stPoint.s32Y = y1 - 16 > 0 ? y1 - 16 : 0;
+        rgn_chn_attr.unChnAttr.stOverlayChn.u32BgAlpha   = 128;
+        rgn_chn_attr.unChnAttr.stOverlayChn.u32FgAlpha   = 128;
+        rgn_chn_attr.unChnAttr.stOverlayChn.u32Layer     = label_idx;
+
+        rgn_chn_attr.unChnAttr.stOverlayChn.stQpInfo.bAbsQp     = HI_FALSE;
+        rgn_chn_attr.unChnAttr.stOverlayChn.stQpInfo.s32Qp      = 0;
+        rgn_chn_attr.unChnAttr.stOverlayChn.stQpInfo.bQpDisable = HI_FALSE;
+        
+        hi_ret = HI_MPI_RGN_AttachToChn(i, &mpp_chn, &rgn_chn_attr);
+        if (hi_ret != HI_SUCCESS)
+        {
+            printf("[%s: %d]HI_MPI_RGN_AttachToChn fail! handle: %d, ret: 0x%x.\n", __func__, __LINE__, i, hi_ret);
+            continue;
+        }
+
+        BITMAP_S rgb1555_bmp;
+        memset(&rgb1555_bmp, 0, sizeof(BITMAP_S));
+        rgb1555_bmp.enPixelFormat = PIXEL_FORMAT_RGB_1555;
+        rgb1555_bmp.u32Width      = bmp_width;
+        rgb1555_bmp.u32Height     = bmp_height;
+        rgb1555_bmp.pData         = (char *)*(unsigned int *)(bmp_addr + label_idx);
+
+        hi_ret = HI_MPI_RGN_SetBitMap(i, &rgb1555_bmp);
+        if (hi_ret != HI_SUCCESS)
+        {
+            printf("[%s: %d]HI_MPI_RGN_SetBitMap fail! handle: %d, ret: 0x%x.\n", __func__, __LINE__, i, hi_ret);
+            continue;
+        }
+    }
+
+    return DEM_SUCCESS;
 }
 
 /*******************************************************************************
@@ -188,7 +314,6 @@ int HI_reflct_coordinate(int tuple_num, float *src_cord, int *dest_cord)
     float *src_addr = src_cord;
     for (loop = 0; loop < tuple_num; ++loop)
     {
-        src_addr += loop * 4;
         src_x1 = *src_addr;
         src_y1 = *(src_addr + 1);
         src_x2 = *(src_addr + 2);
@@ -204,9 +329,11 @@ int HI_reflct_coordinate(int tuple_num, float *src_cord, int *dest_cord)
         printf("[%s: %d]Reflect coordinates: x1: %d, y1: %d, x2: %d, y2: %d\n", __func__, __LINE__, x1, y1, x2, y2);
 
         *(addr++) = x1 > 0 ? x1 : 0;
-        *(addr++) = y1 > 0 ? y1 : 0;
+        *(addr++) = y1 > 0 ? y1 : 16;
         *(addr++) = x2 < dest_width ? x2 : dest_width;
         *(addr++) = y2 < dest_height ? y2 : dest_height;
+
+        src_addr += 4;
     }
 
     return DEM_SUCCESS;
@@ -652,12 +779,14 @@ FREEPACK:
 /*******************************************************************************
  * name    : HI_wrap_label_box_show
  * function: attach labels and boxes on venc.
- * input   : label_names: labels name
+ * input   : number:      osd boxes number
+ *           label_bmp:   labels bmp
+ *           bmp_res:     bmp resolution
  *           boxes:       boxes coordinates, such as X1, Y1, X2, Y2
  * output  : 
  * return  : DEM_SUCCESS or errno number
  *******************************************************************************/
-int HI_wrap_label_box_show(int number, char **label_names, float *boxes)
+int HI_wrap_label_box_show(int number, char **label_bmp, DEM_RES_ST *bmp_res, float *boxes)
 {
     if (0 == number)        // clear all boxes
     {
@@ -666,13 +795,22 @@ int HI_wrap_label_box_show(int number, char **label_names, float *boxes)
         {
             HI_MPI_RGN_Destroy(rgn_handle);
         }
+
+        // Destory bmp handle
+        for (rgn_handle = MIN_BMP_RGN_HANDLEID; 
+            rgn_handle < MIN_BMP_RGN_HANDLEID + s_rgn_params.max_handle; ++rgn_handle)
+        {
+            HI_MPI_RGN_Destroy(rgn_handle);
+        }
+
         s_rgn_params.max_handle = 0;
         return DEM_SUCCESS;
     }
 
-    if (NULL == label_names || NULL == boxes)
+    if (NULL == label_bmp || NULL == boxes || NULL == bmp_res)
     {
-        printf("[%s: %d] label_names or boxes is NULL.\n", __func__, __LINE__);
+        printf("[%s: %d] label_bmp or boxes is NULL.\n", __func__, __LINE__);
+        return DEM_COMMONFAIL;
     }
 
     int reflct_boxes[number][4];
@@ -690,6 +828,14 @@ int HI_wrap_label_box_show(int number, char **label_names, float *boxes)
     if (DEM_SUCCESS != ret)
     {
         printf("[%s: %d] HI_draw_cover_boxes fail.\n", __func__, __LINE__);
+        return ret;
+    }
+
+    // draw the labels
+    ret = HI_draw_cover_labels(label_bmp, number, bmp_res, &reflct_boxes[0][0]);
+    if (DEM_SUCCESS != ret)
+    {
+        printf("[%s: %d] HI_draw_cover_labels fail.\n", __func__, __LINE__);
         return ret;
     }
 
@@ -764,11 +910,111 @@ int HI_wrap_osd_fixtype(void)
         s32Ret = HI_MPI_RGN_AttachToChn(i, &stChn, &stChnAttr);
         if (s32Ret != HI_SUCCESS)
         {
-            printf("HI_MPI_RGN_AttachToChn fail! s32Ret: 0x%x.\n", s32Ret);
+            printf("HI_MPI_RGN_AttachToChn fail! handle: %d, s32Ret: 0x%x.\n", i, s32Ret);
             return s32Ret;
         }
     }
 
     return DEM_SUCCESS;
 
+}
+
+/*******************************************************************************
+ * name    : HI_wrap_draw_cover_labels_fix
+ * function: draw the class labels for test.
+ * input   : 
+ * output  : 
+ * return  : DEM_SUCCESS or errno number
+ *******************************************************************************/
+int HI_wrap_draw_cover_labels_fix(char *bmp_addr)
+{
+    DEM_CONFIG_ST *cfg = DEM_cfg_get_global_params();
+    if (NULL == cfg)
+    {
+        printf("[%s: %d]DEM_cfg_get_global_params fail!\n", __func__, __LINE__);
+        return DEM_COMMONFAIL;
+    }
+
+    if (NULL == bmp_addr)
+    {
+        printf("[%s: %d]param bmp_addr or res fail!\n", __func__, __LINE__);
+        return DEM_COMMONFAIL;   
+    }
+    
+    int i = 0;
+    int hi_ret = DEM_COMMONFAIL;
+    MPP_CHN_S mpp_chn;
+    RGN_ATTR_S rgn_attr;
+    RGN_CHN_ATTR_S rgn_chn_attr;
+
+    /* Add cover to vpss group */
+    mpp_chn.enModId  = HI_ID_VENC;
+    mpp_chn.s32DevId = 0;
+    mpp_chn.s32ChnId = cfg->osd.attach_venc_id;
+
+    printf("[%s: %d]start to create overlay rgn on encode channel: %d!\n", __func__, __LINE__, mpp_chn.s32ChnId);
+
+    /* Create cover and attach to vpss group */
+    for (i = MIN_BMP_RGN_HANDLEID; i < 1 + MIN_BMP_RGN_HANDLEID; i++)
+    {
+        printf("[%s: %d]start to create rgn handle: %d!\n", __func__, __LINE__, i);
+        // set the rgn attributes
+        rgn_attr.enType = OVERLAY_RGN;
+        rgn_attr.unAttr.stOverlay.enPixelFmt       = PIXEL_FORMAT_RGB_1555;
+        rgn_attr.unAttr.stOverlay.stSize.u32Width  = 64;
+        rgn_attr.unAttr.stOverlay.stSize.u32Height = 32;
+        rgn_attr.unAttr.stOverlay.u32BgColor       = 0x7FFF;
+
+        // we cann't create a same handle twice
+        hi_ret = HI_MPI_RGN_Create(i, &rgn_attr);
+        if (HI_SUCCESS != hi_ret)
+        {
+            printf("[%s: %d]HI_MPI_RGN_Create fail! s32Ret: 0x%x.\n", __func__, __LINE__, hi_ret);
+            break;
+        }
+       
+
+        rgn_chn_attr.bShow  = HI_TRUE;
+        rgn_chn_attr.enType = OVERLAY_RGN;
+
+        rgn_chn_attr.unChnAttr.stOverlayChn.stPoint.s32X = 100 + 50 * (i - MIN_BMP_RGN_HANDLEID);
+        rgn_chn_attr.unChnAttr.stOverlayChn.stPoint.s32Y = 100 + 50 * (i - MIN_BMP_RGN_HANDLEID);
+        rgn_chn_attr.unChnAttr.stOverlayChn.u32BgAlpha   = 128;
+        rgn_chn_attr.unChnAttr.stOverlayChn.u32FgAlpha   = 128;
+        rgn_chn_attr.unChnAttr.stOverlayChn.u32Layer     = i - MIN_BMP_RGN_HANDLEID;
+        
+        rgn_chn_attr.unChnAttr.stOverlayChn.stQpInfo.bAbsQp     = HI_FALSE;
+        rgn_chn_attr.unChnAttr.stOverlayChn.stQpInfo.s32Qp      = 0;
+        rgn_chn_attr.unChnAttr.stOverlayChn.stQpInfo.bQpDisable = HI_FALSE;
+
+        // rgn_chn_attr.unChnAttr.stOverlayChn.stInvertColor.stInvColArea.u32Height = 16 * (i % 2 + 1);
+        // rgn_chn_attr.unChnAttr.stOverlayChn.stInvertColor.stInvColArea.u32Width  = 16 * (i % 2 + 1);
+        // rgn_chn_attr.unChnAttr.stOverlayChn.stInvertColor.u32LumThresh = 128;
+        // rgn_chn_attr.unChnAttr.stOverlayChn.stInvertColor.enChgMod     = LESSTHAN_LUM_THRESH;
+        // rgn_chn_attr.unChnAttr.stOverlayChn.stInvertColor.bInvColEn    = HI_FALSE;
+        
+        hi_ret = HI_MPI_RGN_AttachToChn(i, &mpp_chn, &rgn_chn_attr);
+        if (hi_ret != HI_SUCCESS)
+        {
+            printf("[%s: %d]HI_MPI_RGN_AttachToChn fail! handle: %d, ret: 0x%x.\n", __func__, __LINE__, i, hi_ret);
+            break;
+        }
+
+        BITMAP_S rgb1555_bmp;
+        memset(&rgb1555_bmp, 0, sizeof(BITMAP_S));
+        rgb1555_bmp.enPixelFormat = PIXEL_FORMAT_RGB_1555;
+        rgb1555_bmp.u32Width      = 16;
+        rgb1555_bmp.u32Height     = 16;
+        rgb1555_bmp.pData = (char *)*(unsigned int *)(bmp_addr + i - MIN_BMP_RGN_HANDLEID);
+        // printf("[%s: %d]start to HI_MPI_RGN_SetBitMap, address is 0x%x!\n", __func__, __LINE__, (char *)rgb1555_bmp.pData);
+
+        hi_ret = HI_MPI_RGN_SetBitMap(i, &rgb1555_bmp);
+        if (hi_ret != HI_SUCCESS)
+        {
+            printf("[%s: %d]HI_MPI_RGN_SetBitMap fail! ret: 0x%x.\n", __func__, __LINE__, hi_ret);
+            break;
+        }
+    }
+
+    return DEM_SUCCESS;
 }
