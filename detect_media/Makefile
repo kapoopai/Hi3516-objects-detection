@@ -10,6 +10,7 @@ include Makefile.param
 
 MPI_LIBS := $(REL_LIB)/libmpi.a
 MPI_LIBS += $(REL_LIB)/libisp.a
+MPI_LIBS += $(REL_LIB)/libive.a
 else
 CC=gcc
 endif

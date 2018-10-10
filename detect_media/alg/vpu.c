@@ -309,15 +309,15 @@ int apply_nms(float *boxes, int item_cnt)
         if (!item_in_list(loop, high_iou_objs, index))
         {
             memcpy(&tmp_boxes[box_num][0], boxes + loop * box_info_num, box_info_num * sizeof(float));
-            printf("box: [%lf, %lf, %lf, %lf, %lf, %lf, %lf, %lf]\n", tmp_boxes[box_num][0], tmp_boxes[box_num][1],
-                    tmp_boxes[box_num][2], tmp_boxes[box_num][3], tmp_boxes[box_num][4], tmp_boxes[box_num][5],
-                    tmp_boxes[box_num][6], tmp_boxes[box_num][7]);
+            // printf("box: [%lf, %lf, %lf, %lf, %lf, %lf, %lf, %lf]\n", tmp_boxes[box_num][0], tmp_boxes[box_num][1],
+            //         tmp_boxes[box_num][2], tmp_boxes[box_num][3], tmp_boxes[box_num][4], tmp_boxes[box_num][5],
+            //         tmp_boxes[box_num][6], tmp_boxes[box_num][7]);
             box_num++;
         }
     }
 
     memcpy(boxes, tmp_boxes, box_num * box_info_num * sizeof(float));
-    printf("%s, %d, boxes number is: %d\n", __func__, __LINE__, box_num);
+    // printf("%s, %d, boxes number is: %d\n", __func__, __LINE__, box_num);
 
     return box_num;
 }
@@ -871,10 +871,14 @@ int main(int argc, char** argv)
  *           fail : error number
  *******************************************************************************/
 int vpu_load_image(char *image_buf, int image_len, int picture_dim)
+#if 0
 {
     int width, height, cp, i;
     unsigned char *img;
     
+    clock_t start, end = 0;
+    start = clock();
+
     // load file from memory
     img = stbi_load_from_memory((const stbi_uc *)image_buf, image_len, &width, &height, &cp, 3);
     if (NULL == img)
@@ -883,20 +887,24 @@ int vpu_load_image(char *image_buf, int image_len, int picture_dim)
         return -1;
     }
 
+    end = clock();
+    double seconds  = (double)(end - start)/CLOCKS_PER_SEC;
+    printf("[%s: %d]stbi_load_from_memory Use time is: %.8f\n", __func__, __LINE__, seconds);
+
     unsigned int picture_size = picture_dim * picture_dim * 3;
-    for (i = 0; i < picture_size; i++)
-    {
-        g_pic_buf[i] = img[i];
-    }
+    // for (i = 0; i < picture_size; i++)
+    // {
+    //     g_pic_buf[i] = img[i];
+    // }
 
     picture_size = picture_dim * picture_dim;
     for (i = 0; i < picture_size; i++)
     {
         float blue, green, red;
         int idx = 3 * i;
-        red = g_pic_buf[idx];
-        green = g_pic_buf[idx + 1];
-        blue = g_pic_buf[idx + 2];
+        red   = img[idx];
+        green = img[idx + 1];
+        blue  = img[idx + 2];
 
         g_pic_buf[3*i+0] = red / 255.0;
         g_pic_buf[3*i+1] = green / 255.0;
@@ -905,6 +913,35 @@ int vpu_load_image(char *image_buf, int image_len, int picture_dim)
 
     return 0;
 }
+#else
+// image input is RGB
+{
+    int i = 0;
+    int picture_size = image_len / 3;
+
+    // clock_t start, end = 0;
+    // start = clock();
+
+    for (i = 0; i < picture_size; i++)
+    {
+        float blue, green, red;
+        int idx = 3 * i;
+        blue  = image_buf[idx];
+        green = image_buf[idx + 1];
+        red   = image_buf[idx + 2];
+
+        g_pic_buf[3*i+0] = red / 255.0;
+        g_pic_buf[3*i+1] = green / 255.0;
+        g_pic_buf[3*i+2] = blue / 255.0;
+    }
+
+    // end = clock();
+    // double seconds = (double)(end - start)/CLOCKS_PER_SEC;
+    // printf("[%s: %d]normaliza Use time is: %.8f\n", __func__, __LINE__, seconds);
+
+    return 0;
+}
+#endif
 
 /*******************************************************************************
  * name    : vps_parse_result
@@ -1076,8 +1113,8 @@ int vps_parse_result(float *result, int result_len)
     {
         memcpy(box, &boxes[box_loop][0], sizeof(box));
 
-        printf("after copye box: [%lf, %lf, %lf, %lf, %lf, %lf, %lf, %lf]\n",
-                box[0], box[1], box[2], box[3], box[4], box[5], box[6], box[7]);
+        // printf("after copye box: [%lf, %lf, %lf, %lf, %lf, %lf, %lf, %lf]\n",
+        //         box[0], box[1], box[2], box[3], box[4], box[5], box[6], box[7]);
 
         box_xmin = (box[0] - box[2] / 2.0) * image_width;
         box_xmax = (box[0] + box[2] / 2.0) * image_width;
@@ -1120,6 +1157,7 @@ SAVE_RESULT:
     return 0;
 }
 
+// #define TIME_WASTE
 /*******************************************************************************
  * name    : vpu_main_inference
  * function: start to inference and return DNN result.
@@ -1136,23 +1174,34 @@ void *vpu_main_inference(char *image_buf, int image_len)
         return NULL;
     }
 
+    #ifdef TIME_WASTE
+    clock_t start, end = 0;
+    start = clock();
+    double seconds = 0.0;
+    #endif
+
     // load image and save it to g_pic_buf
+    // almost 80ms
     if (0 != vpu_load_image(image_buf, image_len, networkDimNet))
     {
         return NULL;
     }
+
+    #ifdef TIME_WASTE
+    end = clock();
+    seconds = (double)(end - start)/CLOCKS_PER_SEC;
+    printf("[######]vpu_load_image Use time is: %.8f\n", seconds);
+    start = end;
+    #endif
 
     // calculate the length of the buffer that contains the floats.
     // 3 channels * width * height * sizeof a 32bit float
     unsigned int lenBuf = 3 * networkDimNet * networkDimNet * sizeof(float);
     ncStatus_t retCode;
     struct ncTensorDescriptor_t td;
-    // struct ncTensorDescriptor_t resultDesc;
-
-    clock_t start, end = 0;
-    start = clock();
 
     // Read descriptor for input tensor
+    // almost 0ms
     unsigned int length = sizeof(struct ncTensorDescriptor_t);
     retCode = ncFifoGetOption(bufferInNet, NC_RO_FIFO_GRAPH_TENSOR_DESCRIPTOR, &td, &length);
     if (retCode || length != sizeof(td))
@@ -1161,7 +1210,15 @@ void *vpu_main_inference(char *image_buf, int image_len)
         return NULL;
     }
 
+    #ifdef TIME_WASTE
+    end = clock();
+    seconds = (double)(end - start)/CLOCKS_PER_SEC;
+    printf("[######]ncFifoGetOption Use time is: %.8f\n", seconds);
+    start = end;
+    #endif
+
     // Write tensor to input fifo
+    // almost 70~90ms
     retCode = ncFifoWriteElem(bufferInNet, g_pic_buf, &lenBuf, NULL);
     if (retCode != NC_OK)
     {   // error loading tensor
@@ -1170,7 +1227,15 @@ void *vpu_main_inference(char *image_buf, int image_len)
         return NULL;
     }
 
+    #ifdef TIME_WASTE
+    end = clock();
+    seconds = (double)(end - start)/CLOCKS_PER_SEC;
+    printf("[######]ncFifoWriteElem Use time is: %.8f\n", seconds);
+    start = end;
+    #endif
+
     // Start inference
+    // almost 10ms
     retCode = ncGraphQueueInference(graphHandle, &bufferInNet, 1, &bufferOutNet, 1);
     if (retCode)
     {
@@ -1178,10 +1243,18 @@ void *vpu_main_inference(char *image_buf, int image_len)
         return NULL;
     }
 
+    #ifdef TIME_WASTE
+    end = clock();
+    seconds = (double)(end - start)/CLOCKS_PER_SEC;
+    printf("[######]ncGraphQueueInference Use time is: %.8f\n", seconds);
+    start = end;
+    #endif
+
     // the inference has been started, now call ncFifoReadElem() for the
     // inference result
-    printf("Successfully loaded the tensor for image\n");
+    // printf("Successfully loaded the tensor for image\n");
 
+    // almost 0ms
     unsigned int outputDataLength;
     length = sizeof(unsigned int);
     retCode = ncFifoGetOption(bufferOutNet, NC_RO_FIFO_ELEMENT_DATA_SIZE, &outputDataLength, &length);
@@ -1191,6 +1264,13 @@ void *vpu_main_inference(char *image_buf, int image_len)
         return NULL;
     }
 
+    #ifdef TIME_WASTE
+    end = clock();
+    seconds = (double)(end - start)/CLOCKS_PER_SEC;
+    printf("[######]ncFifoGetOption Use time is: %.8f\n", seconds);
+    start = end;
+    #endif
+
     if (NULL == g_ref_result)
     {
         g_ref_result = (float*)malloc(outputDataLength);
@@ -1198,6 +1278,7 @@ void *vpu_main_inference(char *image_buf, int image_len)
 
     void* userParam;
     // Read output results
+    // almost 10ms
     retCode = ncFifoReadElem(bufferOutNet, (void*) g_ref_result, &outputDataLength, &userParam);
     if (retCode != NC_OK)
     {
@@ -1206,13 +1287,15 @@ void *vpu_main_inference(char *image_buf, int image_len)
         return NULL;
     }
 
+    #ifdef TIME_WASTE
     end = clock();
-    double seconds  = (double)(end - start)/CLOCKS_PER_SEC;
-    printf("Use time is: %.8f\n", seconds);
+    seconds  = (double)(end - start)/CLOCKS_PER_SEC;
+    printf("[######]ncFifoReadElem Use time is: %.8f\n", seconds);
+    #endif
 
 
     // Successfully got the result.  The inference result is in the buffer pointed to by g_ref_result
-    printf("Successfully got the inference result for image\n");
+    // printf("Successfully got the inference result for image\n");
 
     if (0 != vps_parse_result(g_ref_result, outputDataLength))
     {

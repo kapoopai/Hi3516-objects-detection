@@ -20,6 +20,7 @@ History       :
 #include <string.h>
 #include <pthread.h>
 #include <sys/prctl.h>
+#include <time.h>
 
 #include "dem_globals.h"
 #include "dem_config.h"
@@ -168,12 +169,12 @@ DEM_ALG_HANDLE *alg_handle_get(char *plat_name, char *alg_name, char *graph_name
         if (g_alg_handle[handle_id].plat == PLAT_UNSUPPORT)
         {
             // add the new handle
-            g_alg_handle[handle_id].plat = plat_type;
-            g_alg_handle[handle_id].type = alg_type;
+            g_alg_handle[handle_id].plat  = plat_type;
+            g_alg_handle[handle_id].type  = alg_type;
             g_alg_handle[handle_id].graph = graph_type;
 
             g_alg_handle[handle_id].plat_handle = alg_plat_handle_get(plat_type);
-            g_alg_handle[handle_id].alg_run = alg_run_callback_get(plat_type);
+            g_alg_handle[handle_id].alg_run     = alg_run_callback_get(plat_type);
 
             if (NULL == g_alg_handle[handle_id].plat_handle || NULL == g_alg_handle[handle_id].alg_run)
             {
@@ -227,6 +228,11 @@ void *alg_task_func(void *arg)
 
     char thread_name[128];
 
+    clock_t start, end = 0;
+    int run_time = 0;
+
+    start = clock();
+
     memset(thread_name, 0, sizeof(thread_name));
     sprintf(thread_name, "alg_%s_%s_%s", alg_params->plat_name, alg_params->alg_name, alg_params->graph_name);
     prctl(PR_SET_NAME, (unsigned long)thread_name, 0, 0, 0);
@@ -260,9 +266,9 @@ void *alg_task_func(void *arg)
     {
         if (DEM_SUCCESS != DEM_jpeg_buf_get(jpeg_buf, &jpeg_len))
         {
-            usleep(30000);
+            usleep(100);
             continue;
-        }
+        }            
 
         if (NULL != jpeg_buf && 0 != jpeg_len)
         {
@@ -279,9 +285,25 @@ void *alg_task_func(void *arg)
             {
                 DEM_display_data_set(alg_ret, DIS_YOLOV2_OBJDTCS);
             }
+
+            // start to calc times per second            
+            run_time++;
+            end = clock();
+            if ((double)(end - start)/CLOCKS_PER_SEC >= 1.00)
+            {
+                printf("------------------------------------\n");
+                printf("[]run times: %d per second\n", run_time);
+                printf("------------------------------------\n");
+
+                run_time = 0;
+                start = end;
+            }
         }
 
-        usleep(100);
+        // release the image buf
+        DEM_jpeg_buf_release();
+
+        usleep(1);
         
         alg_ret = NULL;
     }

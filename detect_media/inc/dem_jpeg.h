@@ -38,4 +38,13 @@ int DEM_jpeg_module_init (void);
  *******************************************************************************/
 int DEM_jpeg_buf_get(char *jpeg_buf, int *jpeg_len);
 
+/*******************************************************************************
+ * name    : DEM_jpeg_buf_release
+ * function: release the image buf.
+ * input   :
+ * output  : 
+ * return  : 
+ *******************************************************************************/
+void DEM_jpeg_buf_release(void);
+
 #endif  /* __DEM_JPEG_H__ */

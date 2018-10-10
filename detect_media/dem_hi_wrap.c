@@ -28,6 +28,7 @@ History       :
 #include "mpi_vi.h"
 #include "mpi_sys.h"
 #include "mpi_region.h"
+#include "mpi_ive.h"
 
 #define MIN_BMP_RGN_HANDLEID            (40)
 
@@ -66,6 +67,17 @@ int HI_draw_cover_boxes(int tuple_num, int *cords)
     mpp_chn.s32DevId = 0;
     mpp_chn.s32ChnId = cfg->osd.attach_vpss_id;
 
+    /* detach old rgn */
+    for (i = 0; i < s_rgn_params.max_handle; i++)
+    {
+        hi_ret = HI_MPI_RGN_DetachFromChn(i, &mpp_chn);
+        if (HI_SUCCESS != hi_ret)
+        {
+            printf("[%s: %d]HI_MPI_RGN_DetachFromChn fail! s32Ret: 0x%x.\n", __func__, __LINE__, hi_ret);
+            return hi_ret;
+        }
+    }
+
     /* Create cover and attach to vpss group */
     int *coords = cords;
     for (i = 0; i < tuple_num; i++)
@@ -87,15 +99,6 @@ int HI_draw_cover_boxes(int tuple_num, int *cords)
             if (HI_SUCCESS != hi_ret)
             {
                 printf("[%s: %d]HI_MPI_RGN_Create fail! s32Ret: 0x%x.\n", __func__, __LINE__, hi_ret);
-                continue;
-            }
-        }
-        else   // detach channel first
-        {
-            hi_ret = HI_MPI_RGN_DetachFromChn(i, &mpp_chn);
-            if (HI_SUCCESS != hi_ret)
-            {
-                printf("[%s: %d]HI_MPI_RGN_DetachFromChn fail! s32Ret: 0x%x.\n", __func__, __LINE__, hi_ret);
                 continue;
             }
         }
@@ -190,6 +193,18 @@ int HI_draw_cover_labels(char **bmp_addr, int tuple_num, DEM_RES_ST *res, int *c
     mpp_chn.s32DevId = 0;
     mpp_chn.s32ChnId = cfg->osd.attach_venc_id;
 
+
+    // detach channel first
+    for (i = MIN_BMP_RGN_HANDLEID; i < s_rgn_params.max_handle + MIN_BMP_RGN_HANDLEID; i++)
+    {
+        hi_ret = HI_MPI_RGN_DetachFromChn(i, &mpp_chn);
+        if (HI_SUCCESS != hi_ret)
+        {
+            printf("[%s: %d]HI_MPI_RGN_DetachFromChn %d fail! s32Ret: 0x%x.\n", __func__, __LINE__, i, hi_ret);
+            return hi_ret;
+        }
+    }
+
     /* Create cover and attach to vpss group */
     int *coords = cords;
     for (i = MIN_BMP_RGN_HANDLEID; i < tuple_num + MIN_BMP_RGN_HANDLEID; i++)
@@ -217,18 +232,9 @@ int HI_draw_cover_labels(char **bmp_addr, int tuple_num, DEM_RES_ST *res, int *c
             hi_ret = HI_MPI_RGN_Create(i, &rgn_attr);
             if (HI_SUCCESS != hi_ret)
             {
-                printf("[%s: %d]HI_MPI_RGN_Create fail! width: %d, height: %d, s32Ret: 0x%x.\n",
-                     __func__, __LINE__, hi_ret,
-                     rgn_attr.unAttr.stOverlay.stSize.u32Width, rgn_attr.unAttr.stOverlay.stSize.u32Height);
-                continue;
-            }
-        }
-        else   // detach channel first
-        {
-            hi_ret = HI_MPI_RGN_DetachFromChn(i, &mpp_chn);
-            if (HI_SUCCESS != hi_ret)
-            {
-                printf("[%s: %d]HI_MPI_RGN_DetachFromChn %d fail! s32Ret: 0x%x.\n", __func__, __LINE__, i, hi_ret);
+                printf("[%s: %d]HI_MPI_RGN_Create fail! label_idx: %d, handle: %d, width: %d, height: %d, s32Ret: 0x%x.\n",
+                     __func__, __LINE__, label_idx, i,
+                     rgn_attr.unAttr.stOverlay.stSize.u32Width, rgn_attr.unAttr.stOverlay.stSize.u32Height, hi_ret);
                 continue;
             }
         }
@@ -237,7 +243,7 @@ int HI_draw_cover_labels(char **bmp_addr, int tuple_num, DEM_RES_ST *res, int *c
         rgn_chn_attr.enType = OVERLAY_RGN;
 
         rgn_chn_attr.unChnAttr.stOverlayChn.stPoint.s32X = x1;
-        rgn_chn_attr.unChnAttr.stOverlayChn.stPoint.s32Y = y1 - 16 > 0 ? y1 - 16 : 0;
+        rgn_chn_attr.unChnAttr.stOverlayChn.stPoint.s32Y = y1 - bmp_height > 0 ? y1 - bmp_height : 0;
         rgn_chn_attr.unChnAttr.stOverlayChn.u32BgAlpha   = 128;
         rgn_chn_attr.unChnAttr.stOverlayChn.u32FgAlpha   = 128;
         rgn_chn_attr.unChnAttr.stOverlayChn.u32Layer     = label_idx;
@@ -326,10 +332,11 @@ int HI_reflct_coordinate(int tuple_num, float *src_cord, int *dest_cord)
         x2 = (((int)(src_x2 * dest_width )) >> 1) << 1;
         y2 = (((int)(src_y2 * dest_height)) >> 1) << 1;
 
-        printf("[%s: %d]Reflect coordinates: x1: %d, y1: %d, x2: %d, y2: %d\n", __func__, __LINE__, x1, y1, x2, y2);
+        // printf("[%s: %d]Reflect coordinates: box index: %d, x1: %d, y1: %d, x2: %d, y2: %d\n", 
+        //         __func__, __LINE__, loop, x1, y1, x2, y2);
 
         *(addr++) = x1 > 0 ? x1 : 0;
-        *(addr++) = y1 > 0 ? y1 : 16;
+        *(addr++) = y1 > 0 ? y1 : 32;
         *(addr++) = x2 < dest_width ? x2 : dest_width;
         *(addr++) = y2 < dest_height ? y2 : dest_height;
 
@@ -681,6 +688,7 @@ STOPENC:
  * return  : DEM_SUCCESS or errno number
  *******************************************************************************/
 int HI_wrap_jpeg_cap_get(int enc_ch, int max_buf_len, pthread_mutex_t *lock, char *out_buf, int *out_len)
+#if 0
 {
     int hi_ret = DEM_COMMONFAIL;
     VENC_CHN_STAT_S venc_chn_state;
@@ -775,7 +783,197 @@ FREEPACK:
     }
     return hi_ret;
 }
+#else
+// capture YUV from vpss channel and then user for IVE YUV2RGB
+// use for vpss channel 1
+{
+    int hi_ret   = DEM_COMMONFAIL;
+    int group    = 0;
+    int vpss_chn = 1;
+    int wait     = 10;      // 10ms
 
+    HI_U32 org_dep = 0;
+    VIDEO_FRAME_INFO_S fram_info;
+
+    //printf("[%s: %d] HI_MPI_VENC_Query chn %d start.\n", __func__, __LINE__, enc_ch);
+    if (DEM_SUCCESS != (hi_ret = HI_MPI_VPSS_GetDepth(group, vpss_chn, &org_dep)))
+    {
+        printf("[%s: %d] HI_MPI_VPSS_GetDepth failed. errno: 0x%08x\n", __func__, __LINE__, hi_ret);
+        return hi_ret;
+    }
+
+    if (1 != org_dep)
+    {
+        if (DEM_SUCCESS != (hi_ret = HI_MPI_VPSS_SetDepth(group, vpss_chn, 1)))
+        {
+            printf("[%s: %d] HI_MPI_VPSS_SetDepth failed. errno: 0x%08x\n", __func__, __LINE__, hi_ret);
+            HI_MPI_VPSS_SetDepth(group, vpss_chn, org_dep);
+            return hi_ret;
+        }
+    }
+
+    memset(&fram_info, 0, sizeof(VIDEO_FRAME_INFO_S));
+    fram_info.u32PoolId = VB_INVALID_POOLID;
+    if (DEM_SUCCESS != (hi_ret = HI_MPI_VPSS_GetChnFrame(group, vpss_chn, &fram_info, wait)))
+    {
+        printf("[%s: %d] HI_MPI_VPSS_GetChnFrame failed. errno: 0x%08x\n", __func__, __LINE__, hi_ret);
+        return DEM_SUCCESS;
+    }
+
+    #if 0
+    printf("-----------------------------------------------------\n");
+    printf("fram_info.stVFrame.u32Width: %u\n", fram_info.stVFrame.u32Width);
+    printf("fram_info.stVFrame.u32Stride[0]: %u\n", fram_info.stVFrame.u32Stride[0]);
+    printf("fram_info.stVFrame.u32Stride[1]: %u\n", fram_info.stVFrame.u32Stride[1]);
+    printf("fram_info.stVFrame.u32Stride[2]: %u\n", fram_info.stVFrame.u32Stride[2]);
+    printf("fram_info.stVFrame.u32PhyAddr[0]: 0x%x\n", fram_info.stVFrame.u32PhyAddr[0]);
+    printf("fram_info.stVFrame.u32PhyAddr[1]: 0x%x\n", fram_info.stVFrame.u32PhyAddr[1]);
+    printf("fram_info.stVFrame.u32PhyAddr[2]: 0x%x\n", fram_info.stVFrame.u32PhyAddr[2]);
+    printf("fram_info.stVFrame.pVirAddr[0]: 0x%x\n", fram_info.stVFrame.pVirAddr[0]);
+    printf("fram_info.stVFrame.pVirAddr[1]: 0x%x\n", fram_info.stVFrame.pVirAddr[1]);
+    printf("fram_info.stVFrame.pVirAddr[2]: 0x%x\n", fram_info.stVFrame.pVirAddr[2]);
+    printf("-----------------------------------------------------\n");
+    #endif
+
+    IVE_IMAGE_TYPE_E image_type = IVE_IMAGE_TYPE_BUTT;
+    switch (fram_info.stVFrame.enPixelFormat)
+    {
+        case PIXEL_FORMAT_YUV_SEMIPLANAR_420:
+            image_type = IVE_IMAGE_TYPE_YUV420SP;
+            break;
+        case PIXEL_FORMAT_YUV_SEMIPLANAR_422:
+            image_type = IVE_IMAGE_TYPE_YUV422SP;
+            break;
+        default:
+            break;
+    }
+
+    if (IVE_IMAGE_TYPE_BUTT == image_type)
+    {
+        printf("[%s: %d] image_type is error. type: %d\n", __func__, __LINE__, fram_info.stVFrame.enPixelFormat);
+
+        HI_MPI_VPSS_SetDepth(group, vpss_chn, org_dep);
+        hi_ret = DEM_COMMONFAIL;
+        goto REL_FRAME;
+    }
+
+    /* convert YUV2RGB */
+    HI_VOID *pVirtDst = NULL;
+    IVE_SRC_IMAGE_S stSrc;
+    IVE_DST_IMAGE_S stDst;
+    unsigned int   *pImage = NULL;
+
+    stSrc.enType        = image_type;
+    stSrc.u16Width      = fram_info.stVFrame.u32Width;
+    stSrc.u16Height     = fram_info.stVFrame.u32Height;
+    stSrc.u16Stride[0]  = fram_info.stVFrame.u32Stride[0];
+    stSrc.u16Stride[1]  = fram_info.stVFrame.u32Stride[1];
+    stSrc.u16Stride[2]  = fram_info.stVFrame.u32Stride[2];
+    stSrc.u32PhyAddr[0] = fram_info.stVFrame.u32PhyAddr[0];
+    stSrc.u32PhyAddr[1] = fram_info.stVFrame.u32PhyAddr[1];
+    stSrc.u32PhyAddr[2] = fram_info.stVFrame.u32PhyAddr[2];
+    stSrc.pu8VirAddr[0] = fram_info.stVFrame.pVirAddr[0];
+    stSrc.pu8VirAddr[1] = fram_info.stVFrame.pVirAddr[1];
+    stSrc.pu8VirAddr[2] = fram_info.stVFrame.pVirAddr[2];
+
+    stDst.enType        = IVE_IMAGE_TYPE_U8C3_PACKAGE;      // BGR
+    stDst.u16Width      = stSrc.u16Width;
+    stDst.u16Height     = stSrc.u16Height;
+    stDst.u16Stride[0]  = stSrc.u16Stride[0];
+    stDst.u16Stride[1]  = stSrc.u16Stride[1];
+    stDst.u16Stride[2]  = stSrc.u16Stride[2];
+
+    IVE_HANDLE IveHandle;
+    HI_BOOL bInstant = HI_TRUE;
+    IVE_CSC_CTRL_S stCscCtrl;
+    stCscCtrl.enMode = IVE_CSC_MODE_PIC_BT601_YUV2RGB;
+
+    hi_ret = HI_MPI_SYS_MmzAlloc_Cached(
+        &stDst.u32PhyAddr[0], &pVirtDst, "User", HI_NULL, stSrc.u16Height * stDst.u16Stride[0]);
+    if (DEM_SUCCESS != hi_ret)
+    {
+        printf("[%s: %d] HI_MPI_SYS_MmzAlloc_Cached fail. errno: 0x%08x\n", __func__, __LINE__, hi_ret);
+        HI_MPI_VPSS_SetDepth(group, vpss_chn, org_dep);
+        goto REL_FRAME;
+    }
+    #if 0
+    printf("-------------------After MMZ Alloc--------------------\n");
+    printf("stSrc.u16Width: %u\n", stSrc.u16Width);
+    printf("stSrc.u16Stride[0]: %u\n", stSrc.u16Stride[0]);
+    printf("stSrc.u16Stride[1]: %u\n", stSrc.u16Stride[1]);
+    printf("stSrc.u16Stride[2]: %u\n", stSrc.u16Stride[2]);
+    printf("stSrc.u32PhyAddr[0]: 0x%x\n", stSrc.u32PhyAddr[0]);
+    printf("stSrc.u32PhyAddr[1]: 0x%x\n", stSrc.u32PhyAddr[1]);
+    printf("stSrc.u32PhyAddr[2]: 0x%x\n", stSrc.u32PhyAddr[2]);
+    printf("stSrc.pu8VirAddr[0]: 0x%x\n", stSrc.pu8VirAddr[0]);
+    printf("stSrc.pu8VirAddr[1]: 0x%x\n", stSrc.pu8VirAddr[1]);
+    printf("stSrc.pu8VirAddr[2]: 0x%x\n", stSrc.pu8VirAddr[2]);
+    printf("-----------------------------------------------------\n");
+    #endif
+
+    HI_MPI_SYS_MmzFree(stDst.u32PhyAddr[0], pVirtDst);
+    #if 0
+    printf("-------------------After MMZ free----------------------\n");
+    printf("stSrc.u16Width: %u\n", stSrc.u16Width);
+    printf("stSrc.u16Stride[0]: %u\n", stSrc.u16Stride[0]);
+    printf("stSrc.u16Stride[1]: %u\n", stSrc.u16Stride[1]);
+    printf("stSrc.u16Stride[2]: %u\n", stSrc.u16Stride[2]);
+    printf("stSrc.u32PhyAddr[0]: 0x%x\n", stSrc.u32PhyAddr[0]);
+    printf("stSrc.u32PhyAddr[1]: 0x%x\n", stSrc.u32PhyAddr[1]);
+    printf("stSrc.u32PhyAddr[2]: 0x%x\n", stSrc.u32PhyAddr[2]);
+    printf("stSrc.pu8VirAddr[0]: 0x%x\n", stSrc.pu8VirAddr[0]);
+    printf("stSrc.pu8VirAddr[1]: 0x%x\n", stSrc.pu8VirAddr[1]);
+    printf("stSrc.pu8VirAddr[2]: 0x%x\n", stSrc.pu8VirAddr[2]);
+    printf("-----------------------------------------------------\n");
+    #endif
+
+    hi_ret = HI_MPI_IVE_CSC(&IveHandle, &stSrc, &stDst, &stCscCtrl, bInstant);
+    if (DEM_SUCCESS != hi_ret)
+    {
+        printf("[%s: %d] HI_MPI_IVE_CSC fail. errno: 0x%08x\n", __func__, __LINE__, hi_ret);
+        HI_MPI_VPSS_SetDepth(group, vpss_chn, org_dep);
+        goto REL_FRAME;
+    }
+
+    pImage = HI_MPI_SYS_Mmap(stDst.u32PhyAddr[0], (HI_U32)(stDst.u16Width * stDst.u16Height * 3));
+    if (NULL == pImage)
+    {
+        printf("[%s: %d] HI_MPI_SYS_Mmap fail.\n", __func__, __LINE__);
+        hi_ret = DEM_COMMONFAIL;
+        HI_MPI_VPSS_SetDepth(group, vpss_chn, org_dep);
+        goto REL_FRAME;
+    }
+
+    /* copy picture */
+    unsigned int save_size = stDst.u16Width * stDst.u16Height * 3;
+    save_size = max_buf_len > save_size ? save_size : max_buf_len;
+
+    // lock mutex
+    if (NULL != lock)
+    {
+        pthread_mutex_lock(lock);
+    }
+
+    *out_len = 0;
+    memcpy(out_buf, pImage, save_size);
+    *out_len = save_size;
+    //printf("[%s: %d] get picture chn %d success. picture len: %d\n", __func__, __LINE__, enc_ch, *out_len);
+
+    // unlock mutex
+    if (NULL != lock)
+    {
+        pthread_mutex_unlock(lock);
+    }
+
+    HI_MPI_SYS_Munmap(pImage, save_size);
+    // release frame
+REL_FRAME:
+    HI_MPI_VPSS_ReleaseChnFrame(group, vpss_chn, &fram_info);
+    // printf("[%s: %d] finish! result: 0x%x\n", __func__, __LINE__, hi_ret);
+
+    return hi_ret;
+}
+#endif
 /*******************************************************************************
  * name    : HI_wrap_label_box_show
  * function: attach labels and boxes on venc.
@@ -839,7 +1037,7 @@ int HI_wrap_label_box_show(int number, char **label_bmp, DEM_RES_ST *bmp_res, fl
         return ret;
     }
 
-    s_rgn_params.max_handle = number;
+    s_rgn_params.max_handle = number > s_rgn_params.max_handle ? number : s_rgn_params.max_handle;
     return DEM_SUCCESS;
 }
 

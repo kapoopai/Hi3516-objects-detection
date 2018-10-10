@@ -21,6 +21,8 @@ History       :
 #include <unistd.h>
 #include <pthread.h>
 #include <sys/prctl.h>
+#include <time.h>
+#include <sys/timeb.h>
 
 #include "dem_globals.h"
 #include "dem_config.h"
@@ -44,6 +46,91 @@ typedef struct JPEG_HANDLE
 char g_capture_pack[MAX_CAP_BUFFER];
 
 DEM_JPEG_HANDLE g_jpeg_handle;
+
+
+/*******************************************************************************
+ * name    : HalTimeToString
+ * function: time to string
+ * input   :
+ * output  :
+ * return  :
+ *******************************************************************************/
+int time_to_string(struct tm tm_cur, unsigned char *str)
+{
+    int ret = 0;
+
+    if (NULL == str)
+    {
+        return ret = -1;
+    }
+
+    int tmp;
+    int len;
+
+    tmp = tm_cur.tm_year + 1900;    /* from 1900 */
+    len = (tmp / 1000);
+    str[0] = '0' + len;
+
+    tmp = tmp - (1000 * len);
+    len = (tmp / 100);
+    str[1] = '0' + len;
+
+    tmp = tmp - (100 * len);
+    len  = (tmp / 10);
+    str[2] = '0' + len;
+
+    tmp = tmp - (10 * len);
+    str[3] = '0' + tmp;
+
+    str[4] = '-';
+
+    tmp = tm_cur.tm_mon + 1; 
+    len = (tmp / 10);
+    str[5] = '0' + len;
+
+    tmp = tmp - (10 * len);
+    str[6] = '0' + tmp;
+
+    str[7] = '-';
+
+    tmp = tm_cur.tm_mday;
+    len = (tmp / 10);
+    str[8] = '0' + len;
+
+    tmp = tmp - (10 * len);
+    str[9] = '0' + tmp;
+
+    str[10] = ' ';
+
+    tmp = tm_cur.tm_hour;
+    len = (tmp / 10);
+    str[11] = '0' + len;
+
+    tmp = tmp - (10 * len);
+    str[12] = '0' + tmp;
+
+    str[13] = ':';
+
+    tmp = tm_cur.tm_min;
+    len = (tmp / 10);
+    str[14] = '0' + len;
+
+    tmp = tmp - (10 * len);
+    str[15] = '0' + tmp;
+
+    str[16] = ':';
+
+    tmp = tm_cur.tm_sec;
+    len = (tmp / 10);
+    str[17] = '0' + len;
+
+    tmp = tmp - (10 * len);
+    str[18] = '0' + tmp;
+
+    str[19] = '\0';
+
+    return ret;
+}
 
 /*******************************************************************************
  * name    : jpeg_capture_task_func
@@ -70,15 +157,26 @@ void *jpeg_capture_task_func(void *arg)
     printf("[%s: %d]thread %s start process!\n", __func__, __LINE__, thread_name);
     while (DEM_TRUE)
     {
-        // printf("[%s: %d]start to get picture!\n", __func__, __LINE__);
-        HI_wrap_jpeg_cap_get(enc_ch, MAX_CAP_BUFFER, &g_jpeg_handle.mutex, g_jpeg_handle.cap_addr, &g_jpeg_handle.cap_len);
-        // printf("[%s: %d]finish to get picture!\n", __func__, __LINE__);
-        usleep(50000);
+        if (0 == g_jpeg_handle.cap_len)
+        {
+            HI_wrap_jpeg_cap_get(enc_ch, MAX_CAP_BUFFER, &g_jpeg_handle.mutex, g_jpeg_handle.cap_addr, &g_jpeg_handle.cap_len);
+            // printf("[%s: %d]finish to get picture!\n", __func__, __LINE__);
+            #if 0
+            struct timeb    time_b;
+            struct tm       tm_cur;
+            unsigned char   time_str[32];
+            ftime(&time_b);
+            localtime_r(&(time_b.time), &tm_cur);
+            time_to_string(tm_cur, time_str);
+            printf("[%s][%s: %d]finish to get picture!\n", time_str, __func__, __LINE__);
+            #endif
+        }
+        // usleep(50000);
+        usleep(10);
     }
 
     printf("[%s: %d]tread %s end process!\n", __func__, __LINE__, thread_name);
 }
-
 
 /*******************************************************************************
  * name    : jpeg_capture_start
@@ -165,6 +263,20 @@ int DEM_jpeg_buf_get(char *jpeg_buf, int *jpeg_len)
     return ret;
 }
 
+/*******************************************************************************
+ * name    : DEM_jpeg_buf_release
+ * function: release the image buf.
+ * input   :
+ * output  : 
+ * return  : 
+ *******************************************************************************/
+void DEM_jpeg_buf_release(void)
+{
+    if (0 != g_jpeg_handle.cap_len)
+    {
+        g_jpeg_handle.cap_len = 0;
+    }
+}
 
 /*******************************************************************************
  * name    : DEM_jpeg_module_init
